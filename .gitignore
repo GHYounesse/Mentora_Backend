@@ -1,0 +1,85 @@
+HELP.md
+
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+
+# === Java / Maven / Gradle ===
+target/
+build/
+out/
+
+# === IDEs ===
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+
+# VS Code
+.vscode/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# === OS-generated files ===
+.DS_Store
+Thumbs.db
+
+# === Logs & temp ===
+*.log
+logs/
+*.tmp
+*.bak
+*.swp
+
+# === Spring Boot specific ===
+# Exclude compiled or packaged artifacts
+*.jar
+*.war
+*.ear
+
+# === Environment / secrets ===
+.env
+.env.*
+
+
+# === Dependency directories ===
+node_modules/
+.gradle/
+.mvn/wrapper/maven-wrapper.jar
+
+# === Test outputs ===
+test-output/
+surefire-reports/
+jacoco.exec
+
+# === Cache ===
+.cache/
+
