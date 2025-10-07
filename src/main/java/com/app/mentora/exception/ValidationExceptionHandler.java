@@ -17,4 +17,13 @@ public class ValidationExceptionHandler {
         ex.getBindingResult().getFieldErrors().forEach(error -> {errors.put(error.getField(), error.getDefaultMessage());});
         return new ResponseEntity<>(errors, HttpStatus.BAD_REQUEST);
     }
+
+    @ExceptionHandler(ContentNotFoundException.class)
+    public ResponseEntity<String> handleContentNotFound(ContentNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
+    }
+    @ExceptionHandler(DuplicateContentException.class)
+    public ResponseEntity<String> handleDuplicateContent(DuplicateContentException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
+    }
 }

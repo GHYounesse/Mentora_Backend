@@ -1,9 +1,11 @@
 package com.app.mentora.model.auth;
 
+import com.app.mentora.model.content.Content;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -35,9 +37,8 @@ public class User {
     private Set<String> roles = new HashSet<>();
 
 
-    public Long getId() {
-        return this.id;
-    }
+    @OneToMany(mappedBy = "author", fetch = FetchType.LAZY)
+    private Collection<Content> contents;
 
     public String getEmail() {
         return this.email;
@@ -170,5 +171,17 @@ public class User {
 
     public String toString() {
         return "User(id=" + this.getId() + ", email=" + this.getEmail() + ", password=" + this.getPassword() + ", pendingEmail=" + this.getPendingEmail() + ", emailVerified=" + this.isEmailVerified() + ", name=" + this.getName() + ", bio=" + this.getBio() + ", avatarUrl=" + this.getAvatarUrl() + ", roles=" + this.getRoles() + ")";
+    }
+
+    public Long getId() {
+        return this.id;
+    }
+
+    public Collection<Content> getContents() {
+        return this.contents;
+    }
+
+    public void setContents(Collection<Content> contents) {
+        this.contents = contents;
     }
 }

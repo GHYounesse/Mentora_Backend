@@ -1,8 +1,11 @@
 package com.app.mentora.config.auth;
 
 import org.springframework.context.annotation.*;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.*;
 import org.springframework.security.web.SecurityFilterChain;
@@ -10,6 +13,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 import com.app.mentora.security.JwtAuthentificationFilter;
 @Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+@EnableJpaAuditing
 public class SecurityConfig {
     private final JwtAuthentificationFilter jwtFilter;
 
@@ -21,7 +27,10 @@ public class SecurityConfig {
                 .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/h2-console/**","/account/verify-email-change").permitAll()
+                        .requestMatchers("/api/auth/**","/account/verify-email-change").permitAll()
+                        .requestMatchers("/content/public/**").permitAll()
+                        .requestMatchers("/content/premium/**").hasAnyRole("PREMIUM", "ADMIN")
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated());
 
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
