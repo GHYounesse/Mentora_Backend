@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/admin/contents")
+@RequestMapping("/api/v1/admin/contents")
 @PreAuthorize("hasRole('ADMIN')")
 public class AdminContentController {
     private static final Logger log = LoggerFactory.getLogger(AdminContentController.class);

@@ -10,7 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/account")
+@RequestMapping("/api/v1/account")
 public class AccountController {
     private static final Logger log = LoggerFactory.getLogger(AccountController.class);
     @Autowired

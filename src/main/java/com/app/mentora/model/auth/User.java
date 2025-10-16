@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -30,6 +31,14 @@ public class User {
     private String name;
     private String bio;
     private String avatarUrl;
+
+    private int failedAttempts = 0;
+    private boolean accountLocked = false;
+
+    public static final int MAX_FAILED_ATTEMPTS = 5;
+
+    public static final long LOCK_TIME_DURATION = 15 * 60 * 1000;
+    private Instant lockTime;
 
 
     @ElementCollection(fetch = FetchType.EAGER)
@@ -108,6 +117,14 @@ public class User {
         this.roles = roles;
     }
 
+    public void addRole(String role) {
+        this.roles.add(role);
+    }
+
+    public void removeRole(String role) {
+        this.roles.remove(role);
+    }
+
     public boolean equals(final Object o) {
         if (o == this) return true;
         if (!(o instanceof User)) return false;
@@ -183,5 +200,29 @@ public class User {
 
     public void setContents(Collection<Content> contents) {
         this.contents = contents;
+    }
+
+    public int getFailedAttempts() {
+        return this.failedAttempts;
+    }
+
+    public boolean isAccountLocked() {
+        return this.accountLocked;
+    }
+
+    public void setFailedAttempts(int failedAttempts) {
+        this.failedAttempts = failedAttempts;
+    }
+
+    public void setAccountLocked(boolean accountLocked) {
+        this.accountLocked = accountLocked;
+    }
+
+    public Instant getLockTime() {
+        return this.lockTime;
+    }
+
+    public void setLockTime(Instant lockTime) {
+        this.lockTime = lockTime;
     }
 }

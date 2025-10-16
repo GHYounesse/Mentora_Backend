@@ -32,4 +32,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         return userRepository.findByEmail(email).orElseThrow(() -> new RuntimeException("User not found"));
 
     }
+    public void save(User user) {
+        userRepository.save(user);
+    }
 }
