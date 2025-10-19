@@ -8,7 +8,7 @@ import com.app.mentora.dto.auth.SignupUserDto;
 import com.app.mentora.model.auth.User;
 import com.app.mentora.model.token.RefreshToken;
 import com.app.mentora.repository.auth.UserRepository;
-import com.app.mentora.security.JwtAuthentificationFilter;
+import com.app.mentora.security.JwtAuthenticationFilter;
 import com.app.mentora.security.JwtUtil;
 import com.app.mentora.service.auth.CustomUserDetailsService;
 import com.app.mentora.service.limit_rate.RateLimitService;
@@ -83,7 +83,7 @@ class AuthControllerTest {
     @MockitoBean
     private LoginSecurityProperties loginSecurityProperties;
     @MockitoBean
-    private JwtAuthentificationFilter jwtFilter;
+    private JwtAuthenticationFilter jwtFilter;
 
     private SignupUserDto signupDto;
     private LoginUserDto loginDto;
@@ -214,12 +214,12 @@ class AuthControllerTest {
             when(customUserDetailsService.getUserByEmail(loginDto.getEmail())).thenReturn(testUser);
             when(authManager.authenticate(any())).thenReturn(auth);
             when(auth.getPrincipal()).thenReturn(userDetails);
-            when(jwtUtil.generateToken(anyString(), anyList(), anyString())).thenReturn("jwt-token");
+            when(jwtUtil.generateToken(anyString(), anyList())).thenReturn("jwt-token");
 
             RefreshTokenResponse refreshTokenResponse = new RefreshTokenResponse();
             refreshTokenResponse.setRefreshToken(refreshToken);
             refreshTokenResponse.setRawToken("raw-refresh-token");
-            when(refreshTokenService.createRefreshToken(any(User.class))).thenReturn(refreshTokenResponse);
+            when(refreshTokenService.createRefreshToken(any(User.class),anyString(),anyString())).thenReturn(refreshTokenResponse);
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -302,12 +302,12 @@ class AuthControllerTest {
             when(customUserDetailsService.getUserByEmail(loginDto.getEmail())).thenReturn(testUser);
             when(authManager.authenticate(any())).thenReturn(auth);
             when(auth.getPrincipal()).thenReturn(userDetails);
-            when(jwtUtil.generateToken(anyString(), anyList(), anyString())).thenReturn("jwt-token");
+            when(jwtUtil.generateToken(anyString(), anyList())).thenReturn("jwt-token");
 
             RefreshTokenResponse refreshTokenResponse = new RefreshTokenResponse();
             refreshTokenResponse.setRefreshToken(refreshToken);
             refreshTokenResponse.setRawToken("raw-refresh-token");
-            when(refreshTokenService.createRefreshToken(any(User.class))).thenReturn(refreshTokenResponse);
+            when(refreshTokenService.createRefreshToken(any(User.class),anyString(),anyString())).thenReturn(refreshTokenResponse);
 
             mockMvc.perform(post("/api/v1/auth/login")
                             .contentType(MediaType.APPLICATION_JSON)
@@ -370,14 +370,14 @@ class AuthControllerTest {
             when(refreshTokenService.findByToken(hashedToken)).thenReturn(Optional.of(refreshToken));
             when(refreshTokenService.verifyExpiration(refreshToken)).thenReturn(refreshToken);
             when(blacklistService.areAllUserTokensBlacklisted(testUser.getId())).thenReturn(false);
-            when(jwtUtil.generateToken(anyString(), anyList(), anyString())).thenReturn("new-jwt-token");
+            when(jwtUtil.generateToken(anyString(), anyList())).thenReturn("new-jwt-token");
 
             RefreshTokenResponse newRefreshTokenResponse = new RefreshTokenResponse();
             RefreshToken newRefreshToken = new RefreshToken();
             newRefreshToken.setToken("new-hashed-token");
             newRefreshTokenResponse.setRefreshToken(newRefreshToken);
             newRefreshTokenResponse.setRawToken("new-raw-token");
-            when(refreshTokenService.rotateRefreshToken(refreshToken)).thenReturn(newRefreshTokenResponse);
+            when(refreshTokenService.rotateRefreshToken(refreshToken,anyString(),anyString())).thenReturn(newRefreshTokenResponse);
 
             mockMvc.perform(post("/api/v1/auth/refresh")
                             .cookie(new Cookie("refreshToken", "raw-refresh-token"))

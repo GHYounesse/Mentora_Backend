@@ -18,16 +18,26 @@ import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-
+/**
+ * 🔒 JWT Authentication Filter
+ * - Extracts and validates JWT tokens from incoming requests.
+ * - Checks blacklist and token expiration.
+ * - Sets authentication in the SecurityContext for authorized users.
+ *
+ * ✅ Best practice focus:
+ *   - Clean token extraction and validation flow.
+ *   - Blacklist and role verification.
+ *   - Defensive logging and error isolation.
+ */
 @Component
-public class JwtAuthentificationFilter extends OncePerRequestFilter {
+public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final Logger log = LoggerFactory.getLogger(JwtAuthentificationFilter.class);
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
     private final JwtUtil jwtUtil;
     private final CustomUserDetailsService userDetailsService;
     private final TokenBlacklistService blacklistService;
 
-    public JwtAuthentificationFilter(JwtUtil jwtUtil,
+    public JwtAuthenticationFilter(JwtUtil jwtUtil,
                                    CustomUserDetailsService userDetailsService,
                                    TokenBlacklistService blacklistService) {
         this.jwtUtil = jwtUtil;
@@ -42,22 +52,19 @@ public class JwtAuthentificationFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain filterChain)
             throws ServletException, IOException {
         try {
+            // Extract token from Authorization header
             String token = extractTokenFromRequest(request);
 
             if (token != null) {
-                // Step 1: Validate token structure and signature
+                //Validate token structure & extract claims
                 String username = jwtUtil.getUsernameFromToken(token);
-
-                // Step 2: Get JWT ID for blacklist check
                 String jti = jwtUtil.getJtiFromToken(token);
-
-                // Step 3: Get Roles from token
                 List<String> roles=jwtUtil.getRolesFromToken(token);
                 List<SimpleGrantedAuthority> authorities = roles.stream()
                         .map(SimpleGrantedAuthority::new)
                         .toList();
 
-                // Step 3: Check if token is blacklisted
+                //Check if token is blacklisted
                 if (blacklistService.isBlacklisted(jti)) {
                     log.warn("Attempted to use blacklisted token: {}", jti);
                     response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -65,11 +72,11 @@ public class JwtAuthentificationFilter extends OncePerRequestFilter {
                     return;
                 }
 
-                // Step 4: Check if user exists and token is valid
+                //Validate user authentication
                 if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
-                    // Step 5: Check if all user tokens are blacklisted (password change, etc.)
+                    // Check if all tokens revoked (password change, etc.)
                     var user = userDetailsService.getUserByEmail(username);
                     if (blacklistService.areAllUserTokensBlacklisted(user.getId())) {
                         log.warn("Attempted to use token for user with all tokens revoked: {}", username);
@@ -78,7 +85,7 @@ public class JwtAuthentificationFilter extends OncePerRequestFilter {
                         return;
                     }
 
-                    // Step 6: Final validation
+                    // Validate token signature and expiration
                     if (jwtUtil.validateToken(token, username)) {
                         UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
@@ -97,6 +104,7 @@ public class JwtAuthentificationFilter extends OncePerRequestFilter {
                     }
                 }
             }
+        // Handle validation errors
         } catch (JwtUtil.JwtValidationException e) {
             log.error("JWT validation error: {}", e.getMessage());
             // Don't set authentication, let it proceed as unauthenticated
@@ -107,7 +115,9 @@ public class JwtAuthentificationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
 
     }
-
+    /**
+     * Extracts Bearer token from the Authorization header.
+     */
     private String extractTokenFromRequest(HttpServletRequest request) {
         String bearerToken = request.getHeader("Authorization");
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {

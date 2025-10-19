@@ -9,26 +9,28 @@ import org.springframework.stereotype.Component;
 import io.jsonwebtoken.security.SignatureException;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
-import java.util.Base64;
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;
-import io.jsonwebtoken.*;
 
-
+/**
+ * ✅ JwtUtil
+ * Utility class responsible for generating, validating, and parsing JWT access and refresh tokens.
+ * Follows HS512 algorithm and supports issuer/audience validation.
+ */
 @Component
 public class JwtUtil {
     private static final Logger log = LoggerFactory.getLogger(JwtUtil.class);
+    // ============================= Configurable JWT Properties =============================
     @Value("${jwt.access.secret}")
     private String accessSecret;
     @Value("${jwt.access.expiration-ms}")
     private Long accessExpirationMs;
 
-    @Value("${jwt.issuer:mentora-app}")
+    @Value("${jwt.issuer}")
     private String issuer;
 
-    @Value("${jwt.audience:mentora-client}")
+    @Value("${jwt.audience}")
     private String audience;
 
     @Value("${jwt.refresh.secret}")
@@ -36,8 +38,10 @@ public class JwtUtil {
     @Value("${jwt.refresh.expiration-ms}")
     private Long refreshExpirationMs;
 
-    //=====================================JWT Access Token==============================
-
+    // ============================= ACCESS TOKEN ===========================================
+    /**
+     * @return Secret key for signing access tokens (HS512)
+     */
     private SecretKey getAccessKey() {
         // Ensure the secret is at least 64 bytes (512 bits) for HS512
         byte[] keyBytes = accessSecret.getBytes(StandardCharsets.UTF_8);
@@ -46,15 +50,21 @@ public class JwtUtil {
         }
         return Keys.hmacShaKeyFor(keyBytes);
     }
-    // JWT Access Token Generation
-    public String generateToken(String username, List<String> roles, String jti) {
+    /**
+     * Generate access JWT token.
+     * @param username the username of the subject
+     * @param roles user roles
+
+     */
+    public String generateToken(String username, List<String> roles) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + accessExpirationMs);
 
         return Jwts.builder()
+                .setHeaderParam("typ", "JWT")
                 .setSubject(username)
                 .claim("roles", roles)
-                .setId(jti) // JWT ID for revocation
+                .setId(UUID.randomUUID().toString()) // JWT ID for revocation
                 .setIssuedAt(now) // Issued at
                 .setExpiration(expiryDate) // Expiration
                 .setIssuer(issuer) // Issuer claim
@@ -62,38 +72,38 @@ public class JwtUtil {
                 .signWith(getAccessKey(), SignatureAlgorithm.HS512)
                 .compact();
     }
-    //JWT Extract Info Methods
+    // ============================= TOKEN CLAIMS EXTRACTION =============================
 
-    //Extract Username from Token
+    /** Extract username (subject) from token */
     public String getUsernameFromToken(String token) {
         Claims claims = validateAndParseToken(token);
         return claims.getSubject();
     }
 
-    // Extract Jti from Token
+    /** Extract JTI (unique token identifier) */
     public String getJtiFromToken(String token) {
         Claims claims = validateAndParseToken(token);
         return claims.getId();
     }
-    //Extract Roles from Token
+    /** Extract user roles from token */
     @SuppressWarnings("unchecked")
     public List<String> getRolesFromToken(String token) {
         Claims claims = validateAndParseToken(token);
         return (List<String>) claims.get("roles");
     }
-    // Get expiration date from token
+    /** Extract expiration timestamp */
     public Date getExpirationDateFromToken(String token) {
         Claims claims = validateAndParseToken(token);
         return claims.getExpiration();
     }
 
-    // Get issued at date from token
+    /** Extract issued-at timestamp */
     public Date getIssuedAtFromToken(String token) {
         Claims claims = validateAndParseToken(token);
         return claims.getIssuedAt();
     }
 
-    // Check if token is expired
+    /** Check if token is expired */
     public boolean isTokenExpired(String token) {
         try {
             Claims claims = validateAndParseToken(token);
@@ -105,7 +115,12 @@ public class JwtUtil {
 
 
 
-    // Validate token completely
+    /**
+     * Fully validate the token:
+     *  - Signature
+     *  - Expiration
+     *  - Issuer / Audience claims
+     */
     public boolean validateToken(String token, String username) {
         try {
             Claims claims = validateAndParseToken(token);
@@ -117,7 +132,10 @@ public class JwtUtil {
             return false;
         }
     }
-    //Helper Method
+    /**
+     * Centralized JWT parser and validator.
+     * Ensures strong claim verification.
+     */
     public Claims validateAndParseToken(String token) {
         try {
             return Jwts.parserBuilder()
@@ -149,8 +167,8 @@ public class JwtUtil {
     }
 
 
-    //================================Refresh Token===============================
-
+    // ============================= REFRESH TOKEN =========================================
+    /** Generate strong key for refresh token */
     private SecretKey getRefreshKey() {
         // Ensure the secret is at least 64 bytes (512 bits) for HS512
         byte[] keyBytes = refreshSecret.getBytes(StandardCharsets.UTF_8);
@@ -161,9 +179,8 @@ public class JwtUtil {
     }
 
 
-
+    /** Create refresh token with longer expiration */
     public String generateRefreshToken(String username) {
-        System.out.println("Attempt to generate refresh token for user: " + username);
         Date now = new Date();
         Date expiry = new Date(now.getTime() + refreshExpirationMs); // 7 days
         return Jwts.builder()
@@ -173,7 +190,7 @@ public class JwtUtil {
                 .signWith(getRefreshKey(),SignatureAlgorithm.HS512)
                 .compact();
     }
-
+    /** Validate refresh token */
     public boolean validateRefreshToken(String token) {
         try{
             Jwts.parserBuilder().setSigningKey(getRefreshKey()).build().parseClaimsJws(token);
@@ -183,13 +200,13 @@ public class JwtUtil {
         }
         return false;
     }
-
+    /** Extract username from refresh token */
     public String getUsernameFromRefreshToken(String token) {
         Claims claims=Jwts.parserBuilder().setSigningKey(getRefreshKey()).build().parseClaimsJws(token).getBody();
         return claims.getSubject();
     }
 
-
+    // ============================= EXCEPTION HANDLER =====================================
     public static class JwtValidationException extends RuntimeException {
         public JwtValidationException(String message, Throwable cause) {
             super(message, cause);

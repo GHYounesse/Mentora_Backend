@@ -29,7 +29,7 @@ public class RefreshTokenService {
         this.jwtUtil = jwtUtil;
     }
 
-    public RefreshTokenResponse createRefreshToken(User user) {
+    public RefreshTokenResponse createRefreshToken(User user,String deviceInfo,String ipAddress) {
         // Revoke all existing tokens for this user (optional - for single device login)
         // revokeAllUserTokens(user);
 
@@ -37,6 +37,9 @@ public class RefreshTokenService {
         Instant expiryDate = Instant.now().plusMillis(refreshTokenDuration);
         String token= RefreshToken.hashToken(t);
         RefreshToken refreshToken = new RefreshToken(token, user, expiryDate);
+        refreshToken.setDeviceInfo(deviceInfo);
+        refreshToken.setIpAddress(ipAddress);
+        refreshTokenRepository.save(refreshToken);
         return new RefreshTokenResponse(refreshToken, t);
     }
 
@@ -71,13 +74,13 @@ public class RefreshTokenService {
         refreshTokenRepository.deleteExpiredTokens(Instant.now());
     }
 
-    public RefreshTokenResponse rotateRefreshToken(RefreshToken oldToken) {
+    public RefreshTokenResponse rotateRefreshToken(RefreshToken oldToken,String deviceInfo,String ipAddress) {
         // Revoke old token
         oldToken.setRevoked(true);
         refreshTokenRepository.save(oldToken);
 
         // Create new token
-        return createRefreshToken(oldToken.getUser());
+        return createRefreshToken(oldToken.getUser(),deviceInfo,ipAddress);
     }
     //Limit to 5 refresh tokens per user
     public void LimitRefreshTokenPerUserActive(Long userId){

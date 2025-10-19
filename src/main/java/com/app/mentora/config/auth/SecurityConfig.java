@@ -1,5 +1,6 @@
 package com.app.mentora.config.auth;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.*;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -12,35 +13,53 @@ import org.springframework.security.crypto.bcrypt.*;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import com.app.mentora.security.JwtAuthentificationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import com.app.mentora.security.JwtAuthenticationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-@Configuration
-@EnableWebSecurity
-@EnableMethodSecurity
-@EnableJpaAuditing
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+
+@Configuration //this class  is a Spring configuration class
+@EnableWebSecurity //Enables Spring Security’s web support
+@EnableMethodSecurity //Allows @PreAuthorize/@Secured at method level
+@EnableJpaAuditing //Auditing support for created/updated timestamps
 public class SecurityConfig {
-    private final JwtAuthentificationFilter jwtFilter;
 
-    public SecurityConfig(JwtAuthentificationFilter jwtFilter) { this.jwtFilter = jwtFilter; }
+    private final JwtAuthenticationFilter jwtFilter;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtFilter) { this.jwtFilter = jwtFilter; }
+
+    private static final String[] PUBLIC_ENDPOINTS = {
+            "/api/v1/auth/**",
+            "/api/v1/account/verify-email-change",
+            "/api/v1/content/public/**"
+    };
+    @Value("${cors.allowed.origins}")
+    private String[] allowedOrigins;
 
     @Bean
     public SecurityFilterChain filterChain(org.springframework.security.config.annotation.web.builders.HttpSecurity http) throws Exception {
-        http.csrf(//csrf -> csrf.disable()
-                        csrf -> csrf
-                                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-                                // Exclude only login, refresh, or public endpoints
-                                .ignoringRequestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh","/api/v1/auth/register")
-
-                )
+        http.csrf(csrf -> csrf.disable())
+//                        csrf -> csrf
+//                                .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+//                                // Exclude only login, refresh, or public endpoints
+//                                .ignoringRequestMatchers("/api/v1/auth/**")
+//
+//                )
+                .cors(Customizer.withDefaults())//Enables the CorsConfigurationSource bean
                 .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**","/api/v1/account/verify-email-change").permitAll()
-                        .requestMatchers("/api/v1/content/public/**").permitAll()
+                        // Public endpoints
+                        .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
+                        // Restricted routes
                         .requestMatchers("/api/v1/content/premium/**").hasAnyRole("PREMIUM", "ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // Catch-all for others
                         .anyRequest().authenticated())
                 .headers(headers -> headers
                         // Prevent MIME sniffing
@@ -93,7 +112,7 @@ public class SecurityConfig {
 
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
         // for H2 console (dev only)
-        http.headers(headers -> headers.frameOptions(frame -> frame.disable()));
+        //http.headers(headers -> headers.frameOptions(frame -> frame.disable()));
 
         return http.build();
     }
@@ -107,4 +126,33 @@ public class SecurityConfig {
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
     }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+
+        // Allow only trusted origins
+        config.setAllowedOrigins(Arrays.asList(allowedOrigins));
+
+        //Allowed HTTP methods
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        // Allowed headers
+        config.setAllowedHeaders(List.of(
+                "Authorization", "Content-Type", "X-XSRF-TOKEN", "Accept"
+        ));
+
+        //  Allow credentials (cookies, auth headers)
+        config.setAllowCredentials(true);
+
+        // Cache the preflight response for 1 hour
+        config.setMaxAge(Duration.ofHours(1));
+
+        // Apply this config to all endpoints
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", config);
+
+        return source;
+    }
+
 }

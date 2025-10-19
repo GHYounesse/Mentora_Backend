@@ -11,6 +11,7 @@ import com.app.mentora.service.auth.CustomUserDetailsService;
 import com.app.mentora.service.limit_rate.RateLimitService;
 import com.app.mentora.service.token.RefreshTokenService;
 import com.app.mentora.service.token.TokenBlacklistService;
+import com.app.mentora.util.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -31,11 +32,19 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
+
+/**
+ * Authentication Controller:
+ * - Handles signup, login, refresh, and logout endpoints.
+ * - Uses JWT access tokens and HttpOnly refresh token cookies.
+ * - Enforces IP-based rate limits and account lockout.
+ */
+
 @RestController
 @RequestMapping("/api/v1/auth")
 public class AuthController {
     private static final Logger log = LoggerFactory.getLogger(AuthController.class);
-
+    private static final String REFRESH_TOKEN_COOKIE = "refreshToken";
 
     private final AuthenticationManager authManager;
     private final UserRepository userRepo;
@@ -44,8 +53,6 @@ public class AuthController {
     private final CustomUserDetailsService customUserDetailsService;
     private final RefreshTokenService refreshTokenService;
     private final RateLimitService rateLimitService;
-    //private final PasswordValidator passwordValidator;
-
     private final TokenBlacklistService blacklistService;
     private final LoginSecurityProperties loginSecurityProperties;
 
@@ -71,31 +78,14 @@ public class AuthController {
         this.blacklistService = blacklistService;
         this.loginSecurityProperties=loginSecurityProperties;
     }
-    //private final Map<String, Integer> failedAttempts = new ConcurrentHashMap<>();
 
-    private String getClientIP(HttpServletRequest request) {
-        String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader == null) {
-            return request.getRemoteAddr();
-        }
-        return xfHeader.split(",")[0];
-    }
 
-    /*
-    curl --location 'http://localhost:8080/api/auth/signup' \
-    --header 'Content-Type: application/json' \
-    --data-raw '{
-        "email":"xxxxx@gmail.com",
-        "password":"XXXXXX"
-    }'
-    Response
-    {
-    "message": "User registered successfully"
-    }
-     */
+
+    /** ------------------------- SIGNUP ------------------------- */
+
     @PostMapping("/signup")
     public ResponseEntity<?> register(@Valid @RequestBody SignupUserDto req, HttpServletRequest request) {
-        String clientIP = getClientIP(request);
+        String clientIP = IpUtils.getClientIP(request);
         log.info("Signup attempt from IP: {}", clientIP);
 
         // Rate limiting
@@ -105,15 +95,16 @@ public class AuthController {
                     .body(Map.of("error", "Too many requests. Please try again later."));
         }
 
-        // Check if email exists (but don't reveal it in response)
-        if (userRepo.existsByEmail(req.getEmail())) {
+        // Check if email exists
+        Optional<User> existingUser = userRepo.findByEmail(req.getEmail());
+        if (existingUser.isPresent()) {
+            IpUtils.simulateDelay();
             log.warn("Signup failed: Email already in use from IP: {}", clientIP);
-            // Generic message to prevent user enumeration
-//            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-//                    .body(Map.of("error", "Registration failed. Please check your details."));
-            try { Thread.sleep(100 + (long)(Math.random() * 100)); } catch (InterruptedException ignored) {}
-            return ResponseEntity.status(HttpStatus.CREATED)
-                    .body(Map.of("message", "User registered successfully"));
+
+
+            return ResponseEntity.status(HttpStatus.OK)
+                    .body(Map.of("message", "If registration is valid, you will receive confirmation."));
+
         }
 
 
@@ -129,30 +120,12 @@ public class AuthController {
                 .body(Map.of("message", "User registered successfully"));
     }
 
-    /*
-    curl --location 'http://localhost:8080/api/auth/login' \
-    --header 'Content-Type: application/json' \
-    --header 'Cookie: refreshToken=eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ5b3VuZXNzZWdhbWVzQGdtYWlsLmNvbSIsImlhdCI6MTc2MDQ1NTk4MywiZXhwIjoxNzYxMDYwNzgzfQ.Lik_LwBrMoOmZMj66zLbmq8EQwb4H3-PkIoCXO9dxVkvzF5fFMwPaDjupS97FaXXv_dBiiorBzM0vZczcxDe4A' \
-    --data-raw '{
-        "email":"XXXXX@gmail.com",
-        "password":"XXXXX"
-    }'
-    Response
-    {
-    "email": "XXXXX@gmail.com",
-    "token": "XXXXX"
-    }
-     */
+    /** ------------------------- LOGIN ------------------------- */
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginUserDto req,
                                    HttpServletRequest request,
                                    HttpServletResponse response) {
-        String clientIP = getClientIP(request);
-
-//        if (failedAttempts.getOrDefault(req.getEmail(), 0) >= 5) {
-//            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-//                    .body(Map.of("error", "Account temporarily locked"));
-//        }
+        String clientIP = IpUtils.getClientIP(request);
         log.info("Login attempt from IP: {}", clientIP);
 
         // Rate limiting by IP
@@ -171,21 +144,12 @@ public class AuthController {
 
             // 🔹 Step 2: Check lock status
             if (u.isAccountLocked()) {
-                long lockDuration = loginSecurityProperties.getLockTimeDuration();
-                long lockTimeElapsed = Duration.between(u.getLockTime(), Instant.now()).toMillis();
-
-                if (lockTimeElapsed >= lockDuration) {
-                    // Unlock account after lock duration expires
-                    u.setAccountLocked(false);
-                    u.setFailedAttempts(0);
-                    u.setLockTime(null);
-                    customUserDetailsService.save(u);
-                    log.info("Account unlocked automatically for user: {}", u.getEmail());
-                } else {
-                    long minutesLeft = (lockDuration - lockTimeElapsed) / 60000;
+                long minutesLeft= customUserDetailsService.handleLock(u);
+                if(minutesLeft!=0){
                     return ResponseEntity.status(HttpStatus.FORBIDDEN)
                             .body(Map.of("error", "Account locked. Try again in " + minutesLeft + " minutes."));
                 }
+
             }
 
             Authentication authentication = authManager.authenticate(
@@ -195,29 +159,31 @@ public class AuthController {
             var userDetails = (org.springframework.security.core.userdetails.User) authentication.getPrincipal();
             var roles = userDetails.getAuthorities().stream().map(a -> a.getAuthority()).toList();
 
-            String jti = UUID.randomUUID().toString();
+
             // Generate access token
-            String token = jwtUtil.generateToken(userDetails.getUsername(), roles,jti);
+            String token = jwtUtil.generateToken(userDetails.getUsername(), roles);
 
             // Get user entity and create refresh token
             User user = customUserDetailsService.getUserByEmail(userDetails.getUsername());
 
 
-            RefreshTokenResponse refreshTokenResponse = refreshTokenService.createRefreshToken(user);
+            RefreshTokenResponse refreshTokenResponse = refreshTokenService.createRefreshToken(user,request.getHeader("User-Agent"),request.getRemoteAddr());
             RefreshToken refreshToken=refreshTokenResponse.getRefreshToken();
             String rawToken=refreshTokenResponse.getRawToken();
-            refreshToken.setDeviceInfo(request.getHeader("User-Agent"));
-            refreshToken.setIpAddress(request.getRemoteAddr());
+
 
             // Set refresh token in HttpOnly Secure cookie
-            ResponseCookie cookie = ResponseCookie.from("refreshToken", rawToken)
-                    .httpOnly(true)
-                    .secure(cookieSecure)
-                    .path("/api/auth")
-                    .sameSite("Strict")
-                    .maxAge(Duration.ofDays(7))
-                    .build();
+            ResponseCookie cookie = buildCookie(rawToken, Duration.ofDays(7));
             response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+//            ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, rawToken)
+//                    .httpOnly(true)
+//                    .secure(cookieSecure)
+//                    .path("/api/auth")
+//                    .sameSite("Strict")
+//                    .maxAge(Duration.ofDays(7))
+//                    .build();
+//            response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
             Map<String, Object> body = Map.of(
                     "token", token,
@@ -232,18 +198,7 @@ public class AuthController {
 
         } catch (BadCredentialsException e) {
             log.error("Login failed from IP: {} - Invalid credentials", clientIP);
-            User user = customUserDetailsService.getUserByEmail(req.getEmail());
-            if (user != null) {
-                int newAttempts = user.getFailedAttempts() + 1;
-                user.setFailedAttempts(newAttempts);
-
-                if (newAttempts >= loginSecurityProperties.getMaxFailedAttempts()) {
-                    user.setAccountLocked(true);
-                    user.setLockTime(new Date().toInstant());
-                    log.warn("Account locked for user: {}", user.getEmail());
-                }
-                customUserDetailsService.save(user);
-            }
+            handleFailedAttempt(req.getEmail());
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Invalid credentials"));
         } catch (LockedException e) {
@@ -261,21 +216,12 @@ public class AuthController {
         }
     }
 
-    /*
-    curl --location --request POST 'http://localhost:8080/api/auth/refresh' \
-    --header 'Content-Type: application/json' \
-    --header 'Cookie: refreshToken=eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJ5b3VuZXNzZWdhbWVzQGdtYWlsLmNvbSIsImlhdCI6MTc2MDQ1NjQ4MiwiZXhwIjoxNzYxMDYxMjgyfQ.QBwM3TGyFzg66DI6qzW3gRoSSDDRFiisvVdmKrbAcSWIEVp60rgHk_2hbvSQbuNCp8RWkRZZrSBWgYi-NGyw7Q'
-    Response
-    {
-    "token": "XXXX"
-    }
-
-     */
+    /** ------------------------- REFRESH TOKEN ------------------------- */
     @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@CookieValue(name = "refreshToken", required = false) String refreshTokenStr,
+    public ResponseEntity<?> refreshToken(@CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshTokenStr,
                                           HttpServletRequest request,
                                           HttpServletResponse response) {
-        String clientIP = getClientIP(request);
+        String clientIP = IpUtils.getClientIP(request);
 
         if (refreshTokenStr == null || refreshTokenStr.isEmpty()) {
             log.warn("Refresh token missing from IP: {}", clientIP);
@@ -305,22 +251,24 @@ public class AuthController {
             refreshTokenService.LimitRefreshTokenPerUserActive(user.getId());
 
             List<String> roles = user.getRoles().stream().toList();
-            String jti = UUID.randomUUID().toString();
+
             // Generate new access token
-            String newAccessToken = jwtUtil.generateToken(user.getEmail(), roles,jti);
+            String newAccessToken = jwtUtil.generateToken(user.getEmail(), roles);
 
             // Rotate refresh token for better security
-            RefreshTokenResponse refreshTokenResponse = refreshTokenService.rotateRefreshToken(refreshToken);
+            RefreshTokenResponse refreshTokenResponse = refreshTokenService.rotateRefreshToken(refreshToken,request.getHeader("User-Agent"),request.getRemoteAddr());
             String rawToken=refreshTokenResponse.getRawToken();
             RefreshToken newRefreshToken =refreshTokenResponse.getRefreshToken();
             // Update cookie with new refresh token
-            ResponseCookie cookie = ResponseCookie.from("refreshToken", rawToken)
-                    .httpOnly(true)
-                    .secure(cookieSecure)
-                    .path("/api/auth")
-                    .sameSite("Strict")
-                    .maxAge(Duration.ofDays(7))
-                    .build();
+//            ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, rawToken)
+//                    .httpOnly(true)
+//                    .secure(cookieSecure)
+//                    .path("/api/auth")
+//                    .sameSite("Strict")
+//                    .maxAge(Duration.ofDays(7))
+//                    .build();
+//            response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+            ResponseCookie cookie = buildCookie(rawToken, Duration.ofDays(7));
             response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
             log.info("Token refreshed successfully from IP: {}", clientIP);
@@ -333,13 +281,13 @@ public class AuthController {
         }
     }
 
-
+    /** ------------------------- LOGOUT ------------------------- */
     @PostMapping("/logout")
-    public ResponseEntity<?> logout(@CookieValue(name = "refreshToken", required = false) String refreshTokenStr,
+    public ResponseEntity<?> logout(@CookieValue(name = REFRESH_TOKEN_COOKIE, required = false) String refreshTokenStr,
                                     @RequestHeader(value = "Authorization", required = false) String authHeader,
                                     HttpServletRequest request,
                                     HttpServletResponse response) {
-        String clientIP = getClientIP(request);
+        String clientIP = IpUtils.getClientIP(request);
 
         // Step 1: Blacklist the access token (JWT)
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
@@ -362,15 +310,48 @@ public class AuthController {
         }
 
         // Step 3: Delete refresh token cookie
-        ResponseCookie cookie = ResponseCookie.from("refreshToken", "")
-                .httpOnly(true)
-                .secure(cookieSecure)
-                .path("/api/auth")
-                .maxAge(0)
-                .build();
+//        ResponseCookie cookie = ResponseCookie.from(REFRESH_TOKEN_COOKIE, "")
+//                .httpOnly(true)
+//                .secure(cookieSecure)
+//                .path("/api/auth")
+//                .maxAge(0)
+//                .build();
+//        response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        ResponseCookie cookie = buildCookie("", Duration.ZERO);
         response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
         log.info("User logged out from IP: {}", clientIP);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
+    /** ------------------------- PRIVATE HELPERS ------------------------- */
+
+
+    // ✅ Centralized cookie creation
+    private ResponseCookie buildCookie(String value, Duration age) {
+        return ResponseCookie.from(REFRESH_TOKEN_COOKIE, value)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .path("/api/auth")
+                .sameSite("Strict")
+                .maxAge(age)
+                .build();
+    }
+
+
+    // ⚙️ Increment failed attempts & handle lockout
+    private void handleFailedAttempt(String email) {
+        User user = customUserDetailsService.getUserByEmail(email);
+        if (user == null) return;
+        int attempts = user.getFailedAttempts() + 1;
+        user.setFailedAttempts(attempts);
+        if (attempts >= loginSecurityProperties.getMaxFailedAttempts()) {
+            user.setAccountLocked(true);
+            user.setLockTime(Instant.now());
+            log.warn("Account locked for user: {}", email);
+        }
+        customUserDetailsService.save(user);
+    }
+
+
+
 }
